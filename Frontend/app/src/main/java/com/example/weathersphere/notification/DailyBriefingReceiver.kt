@@ -1,22 +1,16 @@
 package com.example.weathersphere.notification
 
-import android.Manifest
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.location.Location
-import androidx.core.content.ContextCompat
 import com.example.weathersphere.data.local.AppDatabase
 import com.example.weathersphere.data.repository.WeatherRepository
 import com.example.weathersphere.datastore.SettingsDataStore
-import com.google.android.gms.location.LocationServices
+import com.example.weathersphere.location.LocationHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
 
 class DailyBriefingReceiver : BroadcastReceiver() {
 
@@ -26,63 +20,46 @@ class DailyBriefingReceiver : BroadcastReceiver() {
             try {
                 val isEnabled = SettingsDataStore.getDailyBriefingEnabled(context).first()
                 if (isEnabled) {
+                    val isCelsius = SettingsDataStore.getTemperatureUnit(context).first()
                     val repository = WeatherRepository(
                         AppDatabase.getDatabase(context).favoriteCityDao()
                     )
 
-                    val hasLocationPermission = ContextCompat.checkSelfPermission(
-                        context,
-                        Manifest.permission.ACCESS_COARSE_LOCATION
-                    ) == PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(
-                        context,
-                        Manifest.permission.ACCESS_FINE_LOCATION
-                    ) == PackageManager.PERMISSION_GRANTED
+                    val location = LocationHelper.getDeviceLocation(context)
 
-                    val location: Location? = if (hasLocationPermission) {
+                    if (location != null) {
                         try {
-                            val fusedClient = LocationServices.getFusedLocationProviderClient(context)
-                            suspendCancellableCoroutine { continuation ->
-                                fusedClient.lastLocation
-                                    .addOnSuccessListener { loc ->
-                                        if (continuation.isActive) {
-                                            continuation.resume(loc)
-                                        }
-                                    }
-                                    .addOnFailureListener {
-                                        if (continuation.isActive) {
-                                            continuation.resume(null)
-                                        }
-                                    }
+                            val weather = repository.getWeatherByLocation(location.latitude, location.longitude)
+                            val cityName = weather.location.name
+                            val temp = if (isCelsius) {
+                                "${weather.current.temp_c.toInt()}°C"
+                            } else {
+                                "${((weather.current.temp_c * 9.0 / 5.0) + 32.0).toInt()}°F"
                             }
+                            val condition = weather.current.condition.text
+
+                            WeatherNotificationHelper.sendDailyBriefingNotification(
+                                context = context,
+                                cityName = cityName,
+                                temp = temp,
+                                condition = condition
+                            )
                         } catch (_: Exception) {
-                            null
+                            WeatherNotificationHelper.sendDailyBriefingNotification(
+                                context = context,
+                                cityName = "Device Location",
+                                temp = "--",
+                                condition = "Good morning! Weather check active for your area."
+                            )
                         }
                     } else {
-                        null
+                        WeatherNotificationHelper.sendDailyBriefingNotification(
+                            context = context,
+                            cityName = "Device Location",
+                            temp = "--",
+                            condition = "Good morning! Please enable device location for local weather updates."
+                        )
                     }
-
-                    val weather = try {
-                        if (location != null) {
-                            repository.getWeatherByLocation(location.latitude, location.longitude)
-                        } else {
-                            val favorites = try { repository.getFavorites() } catch (_: Exception) { emptyList() }
-                            val targetCity = favorites.firstOrNull()?.city ?: "Tokyo"
-                            repository.getCurrentWeather(targetCity)
-                        }
-                    } catch (_: Exception) {
-                        null
-                    }
-
-                    val cityName = weather?.location?.name ?: "Your Area"
-                    val temp = weather?.current?.temp_c?.let { "${it.toInt()}°C" } ?: "24°C"
-                    val condition = weather?.current?.condition?.text ?: "Clear Sky"
-
-                    WeatherNotificationHelper.sendDailyBriefingNotification(
-                        context = context,
-                        cityName = cityName,
-                        temp = temp,
-                        condition = condition
-                    )
 
                     // Reschedule for next day at the user's configured time
                     val savedTime = SettingsDataStore.getDailyBriefingTime(context).first()
@@ -95,3 +72,4 @@ class DailyBriefingReceiver : BroadcastReceiver() {
         }
     }
 }
+

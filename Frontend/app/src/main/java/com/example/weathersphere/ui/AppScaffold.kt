@@ -19,9 +19,10 @@ import com.example.weathersphere.ui.components.PageBackgroundCanvas
 import com.example.weathersphere.viewmodel.WeatherViewModel
 
 @Composable
-fun AppScaffold() {
+fun AppScaffold(
+    viewModel: WeatherViewModel = viewModel()
+) {
     var selectedIndex by remember { mutableIntStateOf(0) }
-    val viewModel: WeatherViewModel = viewModel()
     val uiState by viewModel.uiState.collectAsState()
 
     val currentCondition = uiState.weather?.current?.condition?.text

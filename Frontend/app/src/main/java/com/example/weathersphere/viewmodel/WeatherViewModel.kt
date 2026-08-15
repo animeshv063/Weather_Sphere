@@ -1,23 +1,18 @@
 package com.example.weathersphere.viewmodel
 
-import android.Manifest
 import android.app.Application
-import android.content.pm.PackageManager
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.weathersphere.data.local.AppDatabase
 import com.example.weathersphere.data.local.FavoriteCity
 import com.example.weathersphere.data.repository.WeatherRepository
 import com.example.weathersphere.datastore.SettingsDataStore
+import com.example.weathersphere.location.LocationHelper
 import com.example.weathersphere.notification.WeatherNotificationHelper
-import com.google.android.gms.location.LocationServices
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlin.coroutines.resume
 
 class WeatherViewModel(
     application: Application
@@ -50,6 +45,10 @@ class WeatherViewModel(
             val isBriefing = SettingsDataStore.getDailyBriefingEnabled(context).first()
             val isAlerts = SettingsDataStore.getSevereAlertsEnabled(context).first()
             val briefingTime = SettingsDataStore.getDailyBriefingTime(context).first()
+
+            if (isBriefing) {
+                WeatherNotificationHelper.scheduleDailyBriefing(context, briefingTime)
+            }
 
             _uiState.value = _uiState.value.copy(
                 isCelsius = isCelsius,
@@ -85,7 +84,7 @@ class WeatherViewModel(
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
                     weather = weather,
-                    hourlyForecast = hourly.forecast.forecastday.first().hour,
+                    hourlyForecast = hourly.forecast.forecastday.firstOrNull()?.hour ?: emptyList(),
                     weeklyForecast = weekly.forecast.forecastday,
                     favorites = favorites,
                     suggestions = emptyList()
@@ -142,51 +141,51 @@ class WeatherViewModel(
             if (enabled) {
                 val briefingTime = _uiState.value.dailyBriefingTime
                 WeatherNotificationHelper.scheduleDailyBriefing(context, briefingTime)
-
-                val hasLocationPermission = ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                ) == PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(
-                    context,
-                    Manifest.permission.ACCESS_FINE_LOCATION
-                ) == PackageManager.PERMISSION_GRANTED
-
-                val weatherResponse = if (hasLocationPermission) {
-                    try {
-                        val fusedClient = LocationServices.getFusedLocationProviderClient(context)
-                        val location = suspendCancellableCoroutine { continuation ->
-                            fusedClient.lastLocation
-                                .addOnSuccessListener { loc ->
-                                    if (continuation.isActive) continuation.resume(loc)
-                                }
-                                .addOnFailureListener {
-                                    if (continuation.isActive) continuation.resume(null)
-                                }
-                        }
-                        if (location != null) {
-                            repository.getWeatherByLocation(location.latitude, location.longitude)
-                        } else {
-                            _uiState.value.weather ?: repository.getCurrentWeather("Tokyo")
-                        }
-                    } catch (_: Exception) {
-                        _uiState.value.weather ?: repository.getCurrentWeather("Tokyo")
-                    }
-                } else {
-                    _uiState.value.weather ?: repository.getCurrentWeather("Tokyo")
-                }
-
-                val currentCity = weatherResponse?.location?.name ?: "Your Area"
-                val currentTemp = weatherResponse?.current?.temp_c?.let { "${it.toInt()}°C" } ?: "24°C"
-                val currentCondition = weatherResponse?.current?.condition?.text ?: "Clear Sky"
-                WeatherNotificationHelper.sendDailyBriefingNotification(
-                    context = context,
-                    cityName = currentCity,
-                    temp = currentTemp,
-                    condition = currentCondition
-                )
+                fetchAndSendDailyBriefing(context)
             } else {
                 WeatherNotificationHelper.cancelDailyBriefing(context)
             }
+        }
+    }
+
+    fun sendDailyBriefingNow() {
+        viewModelScope.launch {
+            val context = getApplication<Application>()
+            fetchAndSendDailyBriefing(context)
+        }
+    }
+
+    private suspend fun fetchAndSendDailyBriefing(context: Application) {
+        val location = LocationHelper.getDeviceLocation(context)
+        if (location != null) {
+            try {
+                val weather = repository.getWeatherByLocation(location.latitude, location.longitude)
+                val tempStr = if (_uiState.value.isCelsius) {
+                    "${weather.current.temp_c.toInt()}°C"
+                } else {
+                    "${((weather.current.temp_c * 9.0 / 5.0) + 32.0).toInt()}°F"
+                }
+                WeatherNotificationHelper.sendDailyBriefingNotification(
+                    context = context,
+                    cityName = weather.location.name,
+                    temp = tempStr,
+                    condition = weather.current.condition.text
+                )
+            } catch (_: Exception) {
+                WeatherNotificationHelper.sendDailyBriefingNotification(
+                    context = context,
+                    cityName = "Your Device Location",
+                    temp = "--",
+                    condition = "Scheduled for ${_uiState.value.dailyBriefingTime}"
+                )
+            }
+        } else {
+            WeatherNotificationHelper.sendDailyBriefingNotification(
+                context = context,
+                cityName = "Device Location",
+                temp = "--",
+                condition = "Scheduled for ${_uiState.value.dailyBriefingTime}. Enable GPS permissions for local briefing."
+            )
         }
     }
 
@@ -196,10 +195,104 @@ class WeatherViewModel(
             val context = getApplication<Application>()
             SettingsDataStore.saveSevereAlertsEnabled(context, enabled)
             if (enabled) {
+                fetchAndSendSevereAlert(context)
+            }
+        }
+    }
+
+    fun sendSevereAlertsNow() {
+        viewModelScope.launch {
+            val context = getApplication<Application>()
+            fetchAndSendSevereAlert(context)
+        }
+    }
+
+    private suspend fun fetchAndSendSevereAlert(context: Application) {
+        val location = LocationHelper.getDeviceLocation(context)
+        if (location != null) {
+            try {
+                val weather = repository.getWeatherByLocation(location.latitude, location.longitude)
+                val cityName = weather.location.name
+                val conditionText = weather.current.condition.text
+                val windKph = weather.current.wind_kph
+                val tempC = weather.current.temp_c
+                val tempStr = if (_uiState.value.isCelsius) "${tempC.toInt()}°C" else "${((tempC * 9.0 / 5.0) + 32.0).toInt()}°F"
+
+                val lowerCondition = conditionText.lowercase()
+                val isSevereCondition = lowerCondition.contains("thunder") ||
+                        lowerCondition.contains("storm") ||
+                        lowerCondition.contains("heavy") ||
+                        lowerCondition.contains("blizzard") ||
+                        lowerCondition.contains("tornado") ||
+                        lowerCondition.contains("cyclone") ||
+                        lowerCondition.contains("hurricane") ||
+                        lowerCondition.contains("gale") ||
+                        lowerCondition.contains("squall") ||
+                        lowerCondition.contains("hail") ||
+                        lowerCondition.contains("flood") ||
+                        windKph >= 55.0 ||
+                        tempC >= 42.0 ||
+                        tempC <= -15.0
+
+                if (isSevereCondition) {
+                    WeatherNotificationHelper.sendSevereAlertNotification(
+                        context = context,
+                        title = "⚠️ Severe Weather Warning • $cityName",
+                        message = "Warning: $conditionText, $tempStr with wind ${windKph.toInt()} km/h. Please stay indoors and take safety precautions."
+                    )
+                } else {
+                    WeatherNotificationHelper.sendSevereAlertNotification(
+                        context = context,
+                        title = "🛡️ Weather Alerts Active • $cityName",
+                        message = "Current condition: $tempStr, $conditionText. Actively monitoring $cityName for severe weather hazards."
+                    )
+                }
+            } catch (_: Exception) {
                 WeatherNotificationHelper.sendSevereAlertNotification(
                     context = context,
-                    title = "⚠️ Weather Alerts Activated",
-                    message = "You will now receive severe weather sound notifications."
+                    title = "🛡️ Severe Weather Alerts Active",
+                    message = "Active monitoring enabled for extreme weather events."
+                )
+            }
+        } else {
+            WeatherNotificationHelper.sendSevereAlertNotification(
+                context = context,
+                title = "🛡️ Severe Weather Alerts Active",
+                message = "Active monitoring enabled. Please ensure location permissions are granted for your device's coordinates."
+            )
+        }
+    }
+
+    fun loadWeatherByCurrentLocation() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            val context = getApplication<Application>()
+            val location = LocationHelper.getDeviceLocation(context)
+            if (location != null) {
+                try {
+                    val weather = repository.getWeatherByLocation(location.latitude, location.longitude)
+                    val hourly = try { repository.getHourlyForecast(weather.location.name) } catch (_: Exception) { null }
+                    val weekly = try { repository.getWeeklyForecast(weather.location.name) } catch (_: Exception) { null }
+                    val favorites = repository.getFavorites()
+
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        weather = weather,
+                        hourlyForecast = hourly?.forecast?.forecastday?.firstOrNull()?.hour ?: emptyList(),
+                        weeklyForecast = weekly?.forecast?.forecastday ?: emptyList(),
+                        favorites = favorites,
+                        suggestions = emptyList()
+                    )
+                } catch (e: Exception) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        error = e.message ?: "Failed to fetch weather for your location."
+                    )
+                }
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    isLoading = false,
+                    error = "Could not retrieve device location. Please enable GPS and location permissions."
                 )
             }
         }
