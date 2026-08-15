@@ -115,7 +115,7 @@ fun AboutScreen() {
                     Spacer(modifier = Modifier.height(18.dp))
 
                     Text(
-                        text = "WeatherSphere",
+                        text = "Weather Sphere",
                         fontSize = 30.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -312,13 +312,13 @@ fun AboutScreen() {
                             type = "text/plain"
                             putExtra(
                                 Intent.EXTRA_TEXT,
-                                "Check out WeatherSphere - Atmospheric & Weather Intelligence Platform crafted with modern Jetpack Compose!\n\nhttps://github.com/animeshv063/Weather_Sphere"
+                                "Check out Weather Sphere - Atmospheric & Weather Intelligence Platform crafted with modern Jetpack Compose!\n\nhttps://github.com/animeshv063/Weather_Sphere"
                             )
                         }
                         try {
-                            context.startActivity(Intent.createChooser(shareIntent, "Share WeatherSphere"))
+                            context.startActivity(Intent.createChooser(shareIntent, "Share Weather Sphere"))
                         } catch (_: Exception) {
-                            updateMessage = "WeatherSphere v1.0.0"
+                            updateMessage = "Weather Sphere v1.0.0"
                         }
                     },
                     modifier = Modifier
@@ -356,7 +356,7 @@ fun AboutScreen() {
                     onClick = {
                         val intent = Intent(Intent.ACTION_SENDTO).apply {
                             data = Uri.parse("mailto:animeshv063@gmail.com")
-                            putExtra(Intent.EXTRA_SUBJECT, "WeatherSphere App Feedback")
+                            putExtra(Intent.EXTRA_SUBJECT, "Weather Sphere App Feedback")
                         }
                         try {
                             context.startActivity(intent)
@@ -441,7 +441,7 @@ fun AboutScreen() {
                 LaunchedEffect(Unit) {
                     kotlinx.coroutines.delay(1200)
                     isCheckingUpdate = false
-                    updateMessage = "WeatherSphere is up to date! (v1.0.0)"
+                    updateMessage = "Weather Sphere is up to date! (v1.0.0)"
                 }
                 Spacer(modifier = Modifier.height(8.dp))
                 CircularProgressIndicator(modifier = Modifier.size(28.dp))
