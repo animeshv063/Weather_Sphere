@@ -1,6 +1,9 @@
 package com.example.weathersphere.viewmodel
 
+import android.Manifest
 import android.app.Application
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.weathersphere.data.local.AppDatabase
@@ -8,10 +11,13 @@ import com.example.weathersphere.data.local.FavoriteCity
 import com.example.weathersphere.data.repository.WeatherRepository
 import com.example.weathersphere.datastore.SettingsDataStore
 import com.example.weathersphere.notification.WeatherNotificationHelper
+import com.google.android.gms.location.LocationServices
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 class WeatherViewModel(
     application: Application
@@ -58,7 +64,11 @@ class WeatherViewModel(
     fun changeDailyBriefingTime(time: String) {
         _uiState.value = _uiState.value.copy(dailyBriefingTime = time)
         viewModelScope.launch {
-            SettingsDataStore.saveDailyBriefingTime(getApplication(), time)
+            val context = getApplication<Application>()
+            SettingsDataStore.saveDailyBriefingTime(context, time)
+            if (_uiState.value.isDailyBriefingEnabled) {
+                WeatherNotificationHelper.scheduleDailyBriefing(context, time)
+            }
         }
     }
 
@@ -130,15 +140,52 @@ class WeatherViewModel(
             val context = getApplication<Application>()
             SettingsDataStore.saveDailyBriefingEnabled(context, enabled)
             if (enabled) {
-                val currentCity = _uiState.value.weather?.location?.name ?: "Tokyo"
-                val currentTemp = _uiState.value.weather?.current?.temp_c?.let { "${it.toInt()}°C" } ?: "24°C"
-                val currentCondition = _uiState.value.weather?.current?.condition?.text ?: "Clear Sky"
+                val briefingTime = _uiState.value.dailyBriefingTime
+                WeatherNotificationHelper.scheduleDailyBriefing(context, briefingTime)
+
+                val hasLocationPermission = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED || ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
+
+                val weatherResponse = if (hasLocationPermission) {
+                    try {
+                        val fusedClient = LocationServices.getFusedLocationProviderClient(context)
+                        val location = suspendCancellableCoroutine { continuation ->
+                            fusedClient.lastLocation
+                                .addOnSuccessListener { loc ->
+                                    if (continuation.isActive) continuation.resume(loc)
+                                }
+                                .addOnFailureListener {
+                                    if (continuation.isActive) continuation.resume(null)
+                                }
+                        }
+                        if (location != null) {
+                            repository.getWeatherByLocation(location.latitude, location.longitude)
+                        } else {
+                            _uiState.value.weather ?: repository.getCurrentWeather("Tokyo")
+                        }
+                    } catch (_: Exception) {
+                        _uiState.value.weather ?: repository.getCurrentWeather("Tokyo")
+                    }
+                } else {
+                    _uiState.value.weather ?: repository.getCurrentWeather("Tokyo")
+                }
+
+                val currentCity = weatherResponse?.location?.name ?: "Your Area"
+                val currentTemp = weatherResponse?.current?.temp_c?.let { "${it.toInt()}°C" } ?: "24°C"
+                val currentCondition = weatherResponse?.current?.condition?.text ?: "Clear Sky"
                 WeatherNotificationHelper.sendDailyBriefingNotification(
                     context = context,
                     cityName = currentCity,
                     temp = currentTemp,
                     condition = currentCondition
                 )
+            } else {
+                WeatherNotificationHelper.cancelDailyBriefing(context)
             }
         }
     }
@@ -156,19 +203,6 @@ class WeatherViewModel(
                 )
             }
         }
-    }
-
-    fun triggerTestBriefing() {
-        val context = getApplication<Application>()
-        val currentCity = _uiState.value.weather?.location?.name ?: "Tokyo"
-        val currentTemp = _uiState.value.weather?.current?.temp_c?.let { "${it.toInt()}°C" } ?: "24°C"
-        val currentCondition = _uiState.value.weather?.current?.condition?.text ?: "Sunny"
-        WeatherNotificationHelper.sendDailyBriefingNotification(
-            context = context,
-            cityName = currentCity,
-            temp = currentTemp,
-            condition = currentCondition
-        )
     }
 
     fun searchSuggestions(query: String) {
