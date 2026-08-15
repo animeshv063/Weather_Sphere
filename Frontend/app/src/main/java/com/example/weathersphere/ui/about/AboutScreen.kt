@@ -301,7 +301,7 @@ fun AboutScreen() {
                             type = "text/plain"
                             putExtra(
                                 Intent.EXTRA_TEXT,
-                                "Check out WeatherSphere - Atmospheric & Weather Intelligence Platform crafted with modern Jetpack Compose!"
+                                "Check out WeatherSphere - Atmospheric & Weather Intelligence Platform crafted with modern Jetpack Compose!\n\nhttps://github.com/animeshv063/Weather_Sphere"
                             )
                         }
                         try {
