@@ -26,33 +26,35 @@ fun AppScaffold() {
 
     val currentCondition = uiState.weather?.current?.condition?.text
 
-    Scaffold(
-        containerColor = Color.Transparent,
-        bottomBar = {
-            BottomBar(
-                selectedIndex = selectedIndex,
-                onItemSelected = { index -> selectedIndex = index }
-            )
-        }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            // Unique Page Background Canvas Animation per selected tab index
-            PageBackgroundCanvas(
-                pageIndex = selectedIndex,
-                weatherCondition = currentCondition,
-                isAnimationEnabled = uiState.isCanvasAnimationEnabled
-            )
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Unique Page Background Canvas Animation covering true edge-to-edge screen
+        PageBackgroundCanvas(
+            pageIndex = selectedIndex,
+            weatherCondition = currentCondition,
+            isAnimationEnabled = uiState.isCanvasAnimationEnabled
+        )
 
-            // Screen Content Navigation Graph
-            NavGraph(
-                selectedIndex = selectedIndex,
-                onTabSelected = { index -> selectedIndex = index },
-                viewModel = viewModel
-            )
+        Scaffold(
+            containerColor = Color.Transparent,
+            bottomBar = {
+                BottomBar(
+                    selectedIndex = selectedIndex,
+                    onItemSelected = { index -> selectedIndex = index }
+                )
+            }
+        ) { paddingValues ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+            ) {
+                // Screen Content Navigation Graph
+                NavGraph(
+                    selectedIndex = selectedIndex,
+                    onTabSelected = { index -> selectedIndex = index },
+                    viewModel = viewModel
+                )
+            }
         }
     }
 }
