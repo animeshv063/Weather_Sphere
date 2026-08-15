@@ -32,7 +32,14 @@ fun HomeScreen(
     onAddFavorite: (String) -> Unit
 ) {
     var cityInput by remember { mutableStateOf("") }
-    var isFavoriteSaved by remember { mutableStateOf(false) }
+
+    LaunchedEffect(uiState.weather?.location?.name) {
+        uiState.weather?.location?.name?.let {
+            if (it.isNotBlank()) {
+                cityInput = it
+            }
+        }
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -212,7 +219,7 @@ fun HomeScreen(
                 val displayTemp = if (isCelsius) "${weather.current.temp_c}°C" else "${(weather.current.temp_c * 9/5 + 32).toInt()}°F"
                 val feelsLikeTemp = if (isCelsius) "${weather.current.feelslike_c}°C" else "${(weather.current.feelslike_c * 9/5 + 32).toInt()}°F"
 
-                val isFav = uiState.favorites.any { it.city.equals(weather.location.name, ignoreCase = true) } || isFavoriteSaved
+                val isFav = uiState.favorites.any { it.city.equals(weather.location.name, ignoreCase = true) }
 
                 // --- HERO WEATHER CARD ---
                 item {
@@ -257,7 +264,6 @@ fun HomeScreen(
                                 IconButton(
                                     onClick = {
                                         onAddFavorite(weather.location.name)
-                                        isFavoriteSaved = true
                                     }
                                 ) {
                                     Icon(

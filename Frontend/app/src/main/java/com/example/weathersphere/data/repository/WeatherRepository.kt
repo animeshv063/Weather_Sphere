@@ -12,6 +12,13 @@ class WeatherRepository(
     private val favoriteCityDao: FavoriteCityDao
 ) {
 
+    suspend fun pingServer() {
+        try {
+            RetrofitInstance.api.pingServer()
+        } catch (_: Exception) {
+        }
+    }
+
     suspend fun getCurrentWeather(
         city: String
     ): WeatherResponse {

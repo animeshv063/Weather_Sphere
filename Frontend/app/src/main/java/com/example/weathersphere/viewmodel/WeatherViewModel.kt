@@ -9,6 +9,8 @@ import com.example.weathersphere.data.repository.WeatherRepository
 import com.example.weathersphere.datastore.SettingsDataStore
 import com.example.weathersphere.location.LocationHelper
 import com.example.weathersphere.notification.WeatherNotificationHelper
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -28,6 +30,13 @@ class WeatherViewModel(
     init {
         loadFavorites()
         loadSettings()
+        warmUpServer()
+    }
+
+    private fun warmUpServer() {
+        viewModelScope.launch {
+            repository.pingServer()
+        }
     }
 
     private fun loadFavorites() {
@@ -72,23 +81,42 @@ class WeatherViewModel(
     }
 
     fun searchCity(city: String) {
-        if (city.isBlank()) return
+        val trimmedCity = city.trim()
+        if (trimmedCity.isBlank()) return
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null)
             try {
-                val weather = repository.getCurrentWeather(city)
-                val hourly = repository.getHourlyForecast(city)
-                val weekly = repository.getWeeklyForecast(city)
-                val favorites = repository.getFavorites()
+                coroutineScope {
+                    val weatherDeferred = async { repository.getCurrentWeather(trimmedCity) }
+                    val hourlyDeferred = async {
+                        try {
+                            repository.getHourlyForecast(trimmedCity)
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
+                    val weeklyDeferred = async {
+                        try {
+                            repository.getWeeklyForecast(trimmedCity)
+                        } catch (_: Exception) {
+                            null
+                        }
+                    }
 
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    weather = weather,
-                    hourlyForecast = hourly.forecast.forecastday.firstOrNull()?.hour ?: emptyList(),
-                    weeklyForecast = weekly.forecast.forecastday,
-                    favorites = favorites,
-                    suggestions = emptyList()
-                )
+                    val weather = weatherDeferred.await()
+                    val hourly = hourlyDeferred.await()
+                    val weekly = weeklyDeferred.await()
+                    val favorites = repository.getFavorites()
+
+                    _uiState.value = _uiState.value.copy(
+                        isLoading = false,
+                        weather = weather,
+                        hourlyForecast = hourly?.forecast?.forecastday?.firstOrNull()?.hour ?: emptyList(),
+                        weeklyForecast = weekly?.forecast?.forecastday ?: emptyList(),
+                        favorites = favorites,
+                        suggestions = emptyList()
+                    )
+                }
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,

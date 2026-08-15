@@ -10,6 +10,9 @@ import retrofit2.http.Query
 
 interface WeatherApiService {
 
+    @GET("/")
+    suspend fun pingServer(): Map<String, Any>
+
     @GET("weather/current")
     suspend fun getCurrentWeather(
         @Query("city") city: String
