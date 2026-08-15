@@ -1,0 +1,9 @@
+# Backend
+Backend/.env
+Backend/**/__pycache__/
+Backend/*.pyc
+
+# Android
+Frontend/.idea/
+Frontend/.gradle/
+Frontend/**/build/
