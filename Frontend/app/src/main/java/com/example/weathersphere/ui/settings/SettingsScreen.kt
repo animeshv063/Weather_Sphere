@@ -232,14 +232,14 @@ fun SettingsScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Daily Morning Briefing",
+                                    text = "Periodic Weather Updates",
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "Get daily forecast summary every morning at $dailyBriefingTime",
+                                    text = "Current location weather twice a day (every 12 hours from $dailyBriefingTime)",
                                     fontSize = 13.sp,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                                 )

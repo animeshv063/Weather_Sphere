@@ -27,6 +27,7 @@ class DailyBriefingReceiver : BroadcastReceiver() {
 
                     val location = LocationHelper.getDeviceLocation(context)
 
+                    // Strict requirement: "and if location not accessible then dont give notification"
                     if (location != null) {
                         try {
                             val weather = repository.getWeatherByLocation(location.latitude, location.longitude)
@@ -37,31 +38,23 @@ class DailyBriefingReceiver : BroadcastReceiver() {
                                 "${((weather.current.temp_c * 9.0 / 5.0) + 32.0).toInt()}°F"
                             }
                             val condition = weather.current.condition.text
+                            val humidity = weather.current.humidity
+                            val windKph = weather.current.wind_kph.toInt()
 
                             WeatherNotificationHelper.sendDailyBriefingNotification(
                                 context = context,
                                 cityName = cityName,
                                 temp = temp,
-                                condition = condition
+                                condition = condition,
+                                humidity = humidity,
+                                windKph = windKph
                             )
                         } catch (_: Exception) {
-                            WeatherNotificationHelper.sendDailyBriefingNotification(
-                                context = context,
-                                cityName = "Device Location",
-                                temp = "--",
-                                condition = "Good morning! Weather check active for your area."
-                            )
+                            // If weather cannot be retrieved for current location, do not show strange or fallback texts
                         }
-                    } else {
-                        WeatherNotificationHelper.sendDailyBriefingNotification(
-                            context = context,
-                            cityName = "Device Location",
-                            temp = "--",
-                            condition = "Good morning! Please enable device location for local weather updates."
-                        )
                     }
 
-                    // Reschedule for next day at the user's configured time
+                    // Reschedule for next 12h slot
                     val savedTime = SettingsDataStore.getDailyBriefingTime(context).first()
                     WeatherNotificationHelper.scheduleDailyBriefing(context, savedTime)
                 }

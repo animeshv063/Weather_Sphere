@@ -93,7 +93,7 @@ object WeatherNotificationHelper {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            // Parse target hour and minute
+            // Parse base target hour and minute
             val isPm = timeString.contains("PM", ignoreCase = true)
             val cleanTime = timeString.replace("AM", "").replace("PM", "").trim()
             val parts = cleanTime.split(":")
@@ -102,28 +102,37 @@ object WeatherNotificationHelper {
             if (!isPm && targetHour == 12) targetHour = 0
             val targetMinute = parts.getOrNull(1)?.toIntOrNull() ?: 0
 
+            // The two times every day are separated by 12 hours
             val now = Calendar.getInstance()
-            val targetTime = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, targetHour)
+            val time1 = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, targetHour % 12) // Morning/First slot (e.g., 7 AM)
+                set(Calendar.MINUTE, targetMinute)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val time2 = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, (targetHour % 12) + 12) // Evening/Second slot 12h later (e.g., 7 PM)
                 set(Calendar.MINUTE, targetMinute)
                 set(Calendar.SECOND, 0)
                 set(Calendar.MILLISECOND, 0)
             }
 
-            if (targetTime.before(now) || targetTime.timeInMillis <= now.timeInMillis) {
-                targetTime.add(Calendar.DAY_OF_YEAR, 1)
-            }
+            val candidates = mutableListOf<Calendar>()
+            if (time1.after(now)) candidates.add(time1) else candidates.add((time1.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 1) })
+            if (time2.after(now)) candidates.add(time2) else candidates.add((time2.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 1) })
+
+            val nextTrigger = candidates.minByOrNull { it.timeInMillis } ?: time1
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 alarmManager.setExactAndAllowWhileIdle(
                     AlarmManager.RTC_WAKEUP,
-                    targetTime.timeInMillis,
+                    nextTrigger.timeInMillis,
                     pendingIntent
                 )
             } else {
                 alarmManager.setExact(
                     AlarmManager.RTC_WAKEUP,
-                    targetTime.timeInMillis,
+                    nextTrigger.timeInMillis,
                     pendingIntent
                 )
             }
@@ -150,9 +159,11 @@ object WeatherNotificationHelper {
 
     fun sendDailyBriefingNotification(
         context: Context,
-        cityName: String = "Tokyo",
-        temp: String = "24°C",
-        condition: String = "Clear Sky"
+        cityName: String,
+        temp: String,
+        condition: String,
+        humidity: Int? = null,
+        windKph: Int? = null
     ) {
         try {
             createNotificationChannels(context)
@@ -174,13 +185,21 @@ object WeatherNotificationHelper {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
+            val details = mutableListOf<String>()
+            if (humidity != null) details.add("Humidity $humidity%")
+            if (windKph != null) details.add("Wind $windKph km/h")
+            val detailSuffix = if (details.isNotEmpty()) " • ${details.joinToString(" • ")}" else ""
+
+            val title = "📍 $cityName • $temp"
+            val body = "$condition$detailSuffix"
+
             val builder = NotificationCompat.Builder(context, CHANNEL_ID_BRIEFING)
                 .setSmallIcon(R.mipmap.ic_launcher)
-                .setContentTitle("☀️ Morning Weather Briefing • $cityName")
-                .setContentText("Today: $temp with $condition. Have a wonderful day!")
+                .setContentTitle(title)
+                .setContentText(body)
                 .setStyle(
                     NotificationCompat.BigTextStyle().bigText(
-                        "Good morning! Current conditions in $cityName: $temp, $condition.\nHave a wonderful day!"
+                        "📍 $cityName: $temp, $condition$detailSuffix"
                     )
                 )
                 .setPriority(NotificationCompat.PRIORITY_MAX)

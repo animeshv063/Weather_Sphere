@@ -197,23 +197,13 @@ class WeatherViewModel(
                     context = context,
                     cityName = weather.location.name,
                     temp = tempStr,
-                    condition = weather.current.condition.text
+                    condition = weather.current.condition.text,
+                    humidity = weather.current.humidity,
+                    windKph = weather.current.wind_kph.toInt()
                 )
             } catch (_: Exception) {
-                WeatherNotificationHelper.sendDailyBriefingNotification(
-                    context = context,
-                    cityName = "Your Device Location",
-                    temp = "--",
-                    condition = "Scheduled for ${_uiState.value.dailyBriefingTime}"
-                )
+                // If weather retrieval fails, do not show strange fallback notification
             }
-        } else {
-            WeatherNotificationHelper.sendDailyBriefingNotification(
-                context = context,
-                cityName = "Device Location",
-                temp = "--",
-                condition = "Scheduled for ${_uiState.value.dailyBriefingTime}. Enable GPS permissions for local briefing."
-            )
         }
     }
 
